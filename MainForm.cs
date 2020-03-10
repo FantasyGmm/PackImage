@@ -4,6 +4,7 @@ using ImageMagick;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -166,6 +167,21 @@ namespace PackImage
             MemoryStream ms = new MemoryStream();
             destination.Save(ms, ImageFormat.Bmp);
             return ms.ToArray();
+        }
+        private byte[] ConvertXBM(string input)
+        {
+            string bytes = System.Text.RegularExpressions.Regex
+                .Match(input, @"\{(.*)\}", System.Text.RegularExpressions.RegexOptions.Singleline).Groups[1].Value;
+            string[] StringArray = bytes.Split(new string[] { "," }, StringSplitOptions.RemoveEmptyEntries);
+            byte[] pixels = new byte[StringArray.Length - 1];
+            for (int k = 0; k < StringArray.Length - 1; k++)
+                if (byte.TryParse(StringArray[k].TrimStart().Substring(2, 2), NumberStyles.HexNumber,
+                    CultureInfo.CurrentCulture, out byte result))
+                    pixels[k] = result;
+                else
+                    throw new Exception();
+
+            return pixels;
         }
     }
 }
