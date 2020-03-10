@@ -174,14 +174,14 @@ namespace PackImage
         {
             pnMain.Enabled = false;
             btnStart.Enabled = false;
-          
-
             if (textBox1.Text != string.Empty)
             {
                 string fname;
-                SaveFileDialog sd = new SaveFileDialog();
-                sd.Filter = "PackFile(*.dat)|*.dat";
-                sd.Title = "请输入保存文件名";
+                SaveFileDialog sd = new SaveFileDialog
+                {
+                    Filter = "PackFile(*.dat)|*.dat",
+                    Title = "请输入保存文件名"
+                };
 
                 if (sd.ShowDialog(this) == DialogResult.OK)
                 {
@@ -299,15 +299,21 @@ namespace PackImage
                 ls.Add(ms);
                 count++;
             }
-
-            //
         }
 
         private void worker_ProgressChanged(object sender, System.ComponentModel.ProgressChangedEventArgs e)
         {
-            //
+
         }
 
-
+        private void button1_Click_1(object sender, EventArgs e)
+        {
+            FolderBrowserDialog fbd = new FolderBrowserDialog
+            {
+                RootFolder = Environment.SpecialFolder.MyComputer
+            };
+            fbd.ShowDialog();
+            textBox1.Text = fbd.SelectedPath;
+        }
     }
 }
