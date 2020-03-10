@@ -5,11 +5,12 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-using System.Text;
-using System.Runtime.Serialization;
+using System.Threading.Tasks;
+using System.Threading;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Collections.Generic;
 using Ionic.Zlib;
+using ImageMagick;
 
 namespace PackImage
 {
@@ -21,17 +22,28 @@ namespace PackImage
             public List<MemoryStream> img;
         }
 
-        private byte[] PACK_SPACE = new byte[] { 0xFF, 0xAA, 0x00, 0xCC };
+        private SynchronizationContext Sync = null;
+        private Task procTask = null;
         public MainForm()
         {
             InitializeComponent();
+            this.Sync = SynchronizationContext.Current;
         }
 
+        private void MainForm_Load(object sender, EventArgs e)
+        {
+            nbxThread.Value = Environment.ProcessorCount;
+        }
+
+        private void setPbar(object o)
+        {
+            this.pbar.Value = (int)o;
+        }
 
         public byte[] zipData(byte[] data)
         {
             return GZipStream.CompressBuffer(data);
-            
+
         }
 
         public byte[] unzipData(byte[] zdata)
@@ -39,15 +51,6 @@ namespace PackImage
             return GZipStream.UncompressBuffer(zdata);
         }
 
-        protected byte[] AuthGetFileData(string fileUrl)
-        {
-            using (FileStream fs = new FileStream(fileUrl, FileMode.Open, FileAccess.Read))
-            {
-                byte[] buf = new byte[fs.Length];
-                fs.Read(buf, 0, buf.Length);
-                return buf;
-            }
-        }
 
 
         public static byte[] GetSingleBitmap(string file)
@@ -167,9 +170,12 @@ namespace PackImage
             textBox1.Text = fbd.SelectedPath;
         }
 
-        private void Button2_Click(object sender, EventArgs e)
+        private void btnStart_Click(object sender, EventArgs e)
         {
-           
+            pnMain.Enabled = false;
+            btnStart.Enabled = false;
+          
+
             if (textBox1.Text != string.Empty)
             {
                 string fname;
@@ -189,39 +195,61 @@ namespace PackImage
 
                 PackData pack = new PackData();
                 List<MemoryStream> ls = new List<MemoryStream>();
+                var files = Directory.GetFiles(textBox1.Text);
+                decimal count = 1;
 
-                foreach (var file in Directory.GetFiles(textBox1.Text))
+                procTask = new Task(() =>
                 {
-                    byte[] tmp = AuthGetFileData(file);
-                    MemoryStream ms = new MemoryStream();
-                    ms.Write(tmp, 0, tmp.Length);
-                    ls.Add(ms);
-                }
-
-                pack.img = ls;
-                MemoryStream mm = new MemoryStream();
-                var formatter = new BinaryFormatter();
-                formatter.Serialize(mm, pack);
-
-                var zdata = zipData(mm.ToArray());
 
 
+                    foreach (var file in files)
+                    {
+                        var td = (count / files.Length) * 100;
+                        var percent = decimal.ToInt32(td);
+                        Sync.Send(setPbar, percent);
 
-                if (File.Exists(fname))
-                    File.Delete(fname);
+                        var buf = GetSingleBitmap(file);
+                        MagickImage img = new MagickImage(buf) { Format = MagickFormat.Xbm };
+                        var width = Convert.ToInt32(nbxWidth.Value);
+                        var height = Convert.ToInt32(nbxHeight.Value);
+                        img.Resize(new MagickGeometry($"{width}x{height}!"));
+                        buf = img.ToByteArray();
+                        MemoryStream ms = new MemoryStream();
+                        ms.Write(buf, 0, buf.Length);
+                        ls.Add(ms);
+                        count++;
+                    }
+
+                    pack.img = ls;
+                    MemoryStream mm = new MemoryStream();
+                    var formatter = new BinaryFormatter();
+                    formatter.Serialize(mm, pack);
+
+                    var zdata = zipData(mm.ToArray());
 
 
-               
-                FileStream fs = new FileStream(fname, FileMode.Create);
-                fs.Write(zdata, 0, zdata.Length);
-                fs.Dispose();
-                Process.Start("Explorer.exe", "/select," + fname);
+                    if (File.Exists(fname))
+                        File.Delete(fname);
+
+                    FileStream fs = new FileStream(fname, FileMode.Create);
+                    fs.Write(zdata, 0, zdata.Length);
+                    fs.Dispose();
+                    Process.Start("Explorer.exe", "/select," + fname);
+
+                    pnMain.Enabled = true;
+                    btnStart.Enabled = true;
+
+                });
+
+
+                procTask.Start();
+
             }
-
         }
 
-        private void button3_Click(object sender, EventArgs e)
+        private void btnStop_Click(object sender, EventArgs e)
         {
+            /*
             using (FileStream fs = new FileStream(Directory.GetCurrentDirectory() + "/pack.dat", FileMode.Open))
             {
                 MemoryStream ms = new MemoryStream();
@@ -234,20 +262,51 @@ namespace PackImage
                 var formatter = new BinaryFormatter();
                 PackData pack = (PackData)formatter.Deserialize(ms);
 
-                foreach(var m in pack.img)
+                foreach (var m in pack.img)
                 {
-                   Image img = Image.FromStream(m);
-                   picbox.Image = img;
-                   MessageBox.Show("ca");
+                    Image img = Image.FromStream(m);
+                    picbox.Image = img;
+                    MessageBox.Show("ca");
                 }
 
-
-
-
             }
+
+          */
+
         }
 
+        private void worker_DoWork(object sender, System.ComponentModel.DoWorkEventArgs e)
+        {
+            var files = e.Argument as string[];
+            PackData pack = new PackData();
+            List<MemoryStream> ls = new List<MemoryStream>();
+            decimal count = 1;
 
+            foreach (var f in files)
+            {
+                var td = (count / files.Length) * 100;
+                var percent = decimal.ToInt32(td);
+                Sync.Send(setPbar, percent);
+
+                var buf = GetSingleBitmap(f);
+                MagickImage img = new MagickImage(buf) { Format = MagickFormat.Xbm };
+                var width = Convert.ToInt32(nbxWidth.Value);
+                var height = Convert.ToInt32(nbxHeight.Value);
+                img.Resize(new MagickGeometry($"{width}x{height}!"));
+                buf = img.ToByteArray();
+                MemoryStream ms = new MemoryStream();
+                ms.Write(buf, 0, buf.Length);
+                ls.Add(ms);
+                count++;
+            }
+
+            //
+        }
+
+        private void worker_ProgressChanged(object sender, System.ComponentModel.ProgressChangedEventArgs e)
+        {
+            //
+        }
 
 
     }
